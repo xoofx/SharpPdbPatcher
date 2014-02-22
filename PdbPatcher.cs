@@ -19,13 +19,10 @@
 // THE SOFTWARE.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Mono.Cecil;
-using Mono.Cecil.Cil;
 using Mono.Cecil.Pdb;
 
 namespace SharpPdbPatcher
@@ -59,13 +56,13 @@ namespace SharpPdbPatcher
         /// </summary>
         /// <param name="inputExeFile">The input PDB file.</param>
         /// <param name="outputPdbFile">The output PDB file.</param>
-        /// <param name="sourcePathModifier">The source path modifier.</param>
+        /// <param name="sourcePathRewriter">The source path modifier.</param>
         /// <exception cref="System.ArgumentNullException">inputExeFile</exception>
-        public static void Patch(string inputExeFile, string outputPdbFile, Func<string, string> sourcePathModifier)
+        public static void Patch(string inputExeFile, string outputPdbFile, Func<string, string> sourcePathRewriter)
         {
             if (inputExeFile == null) throw new ArgumentNullException("inputExeFile");
             if (outputPdbFile == null) throw new ArgumentNullException("outputPdbFile");
-            if (sourcePathModifier == null) throw new ArgumentNullException("sourcePathModifier");
+            if (sourcePathRewriter == null) throw new ArgumentNullException("sourcePathRewriter");
 
             // Copy PDB from input assembly to output assembly if any
             var inputPdbFile = Path.ChangeExtension(inputExeFile, "pdb");
@@ -85,68 +82,8 @@ namespace SharpPdbPatcher
             // Read Assembly
             var assembly = AssemblyDefinition.ReadAssembly(inputExeFile, readerParameters);
 
-            // Patch the pdb
-            PatchPdbToUseRelativePath(assembly, sourcePathModifier);
-
             // Write back the assembly and pdb
-            assembly.Write(inputExeFile, new WriterParameters {WriteSymbols = true});
-        }
-
-
-        private static FieldInfo GetField(Type type, string name, ref FieldInfo fieldInfo)
-        {
-            return fieldInfo ?? (fieldInfo = type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic));
-        }
-
-        /// <summary>
-        /// Patches the PDB to use relative path for source file instead of absolute path.
-        /// Having relative path is making the pdb much easier to redistribute (and we don't need anymore
-        /// to distribute pdb files to nuget symbols server)
-        /// </summary>
-        /// <param name="assembly">The assembly.</param>
-        private static void PatchPdbToUseRelativePath(AssemblyDefinition assembly, Func<string, string> sourcePathModifier)
-        {
-            FieldInfo functionsField = null;
-            FieldInfo linesField = null;
-            FieldInfo fileField = null;
-            FieldInfo nameField = null;
-
-            // TODO instead of hacking Cecil to access internal methods, better modify Cecil and provide a method
-            // to allow source paths renaming directly from the library API
-            foreach (var module in assembly.Modules)
-            {
-                ISymbolReader symbols = module.SymbolReader;
-                if (symbols == null)
-                    continue;
-
-                // Because we don't have access to the underlying classes, we are doing this with reflection
-                var functions = (IDictionary)GetField(symbols.GetType(), "functions", ref functionsField).GetValue(symbols);
-
-                if (functions == null)
-                    return;
-
-                foreach (var function in functions.Values)
-                {
-                    var lines = (object[])GetField(function.GetType(), "lines", ref linesField).GetValue(function);
-                    if (lines == null)
-                        continue;
-
-                    foreach (var line in lines)
-                    {
-                        var source = GetField(line.GetType(), "file", ref fileField).GetValue(line);
-                        if (source == null)
-                            continue;
-
-                        GetField(source.GetType(), "name", ref nameField);
-                        var name = (string)nameField.GetValue(source);
-                        if (name == null)
-                            continue;
-
-                        var newName = sourcePathModifier(name);
-                        nameField.SetValue(source, newName);
-                    }
-                }
-            }
+            assembly.Write(inputExeFile, new WriterParameters {WriteSymbols = true, SourcePathRewriter =  sourcePathRewriter});
         }
 
         internal static void ShowMessage(string message, ConsoleColor color)
