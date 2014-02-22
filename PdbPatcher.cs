@@ -58,7 +58,7 @@ namespace SharpPdbPatcher
         /// <param name="outputPdbFile">The output PDB file.</param>
         /// <param name="sourcePathRewriter">The source path modifier.</param>
         /// <exception cref="System.ArgumentNullException">inputExeFile</exception>
-        public static void Patch(string inputExeFile, string outputPdbFile, Func<string, string> sourcePathRewriter)
+        public static void Patch(string inputExeFile, string outputPdbFile, SourcePathRewriterDelegate sourcePathRewriter)
         {
             if (inputExeFile == null) throw new ArgumentNullException("inputExeFile");
             if (outputPdbFile == null) throw new ArgumentNullException("outputPdbFile");
